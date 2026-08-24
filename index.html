@@ -333,7 +333,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border:none;border-ra
 <option value="jazz">Jazz</option>
 <option value="rock">Rock</option>
 </select></label>
-<label>Voicing<select id="voicingSelect"><option value="close" selected>Close</option><option value="open">Open</option><option value="wide">Wide</option><option value="auto">Auto</option></select></label><label>Beat<select id="beatSelect"><option value="rock" selected>Rock</option><option value="straight">Four on floor</option><option value="boombap">Boom bap</option><option value="shuffle">Shuffle</option><option value="bossa">Bossa</option><option value="ballad">Ballad</option><option value="click">Click</option></select></label><label>Tempo<select id="tempoSelect"></select></label><label>Volume<input type="range" id="volRange" min="0" max="100" step="1" value="85" aria-label="Master volume"></label><label>Reverb<input type="range" id="revRange" min="0" max="100" step="1" value="35" aria-label="Reverb amount"></label><button id="beatBtn" title="Start / stop the drum beat (space)"></button><span class="beatdots"><i></i><i></i><i></i><i></i></span><button id="stopBtn">Stop</button><button id="themeBtn" title="Toggle light/dark mode"></button><button id="fullscreenBtn" title="Toggle full screen"></button><button id="toPadsBtn" title="Switch to the touch pad layout"></button><div class="status" id="status">Click anywhere to activate sound.</div>
+<label>Voicing<select id="voicingSelect"><option value="close" selected>Close</option><option value="open">Open</option><option value="wide">Wide</option><option value="auto">Auto</option></select></label><label>Beat<select id="beatSelect"><option value="rock" selected>Rock</option><option value="straight">Four on floor</option><option value="boombap">Boom bap</option><option value="shuffle">Shuffle</option><option value="bossa">Bossa</option><option value="ballad">Ballad</option><option value="click">Click</option></select></label><label>Tempo<select id="tempoSelect"></select></label><label>Volume<input type="range" id="volRange" min="0" max="100" step="1" value="85" aria-label="Master volume"></label><button id="beatBtn" title="Start / stop the drum beat (space)"></button><span class="beatdots"><i></i><i></i><i></i><i></i></span><button id="stopBtn">Stop</button><button id="themeBtn" title="Toggle light/dark mode"></button><button id="fullscreenBtn" title="Toggle full screen"></button><button id="toPadsBtn" title="Switch to the touch pad layout"></button><div class="status" id="status">Click anywhere to activate sound.</div>
 </div>
 <div class="keyboard" id="keyboard"></div>
 <div class="legend"><span class="pill h1">Q–U</span> variants &nbsp; <span class="pill h2">A–J</span> diatonic chords &nbsp; <span class="pill h3">Z–M</span> seventh chords &nbsp; <span class="pill h4">Flavor</span> recolors the whole keyboard</div>
@@ -414,29 +414,12 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 /* ---- master chain: everything -> reverb send + compressor + output ---- */
-let mixBus=null, outGain=null, revSend=null, wetGain=null, convolver=null;
-let volAmt=.85, revAmt=.35;
+let mixBus=null, outGain=null;
+let volAmt=.85;
 try{
   const v=localStorage.getItem('accordVol'); if(v!==null) volAmt=+v/100;
-  const r=localStorage.getItem('accordRev'); if(r!==null) revAmt=+r/100;
 }catch(e){}
 
-function makeIR(seconds,decay){
-  /* procedural impulse response - keeps the page self-contained, no sample file */
-  const rate=ctx.sampleRate, len=Math.max(1,Math.floor(rate*seconds));
-  const buf=ctx.createBuffer(2,len,rate);
-  for(let ch=0;ch<2;ch++){
-    const d=buf.getChannelData(ch);
-    for(let i=0;i<len;i++){
-      const t=i/len;
-      /* a few early reflections on top of an exponentially decaying noise tail */
-      let v=(Math.random()*2-1)*Math.pow(1-t,decay);
-      if(i<rate*.09 && Math.random()<.0016) v*=3.2;
-      d[i]=v;
-    }
-  }
-  return buf;
-}
 function initGraph(){
   if(mixBus) return;
   mixBus=ctx.createGain();  mixBus.gain.value=1;
@@ -448,14 +431,6 @@ function initGraph(){
   clip.curve=curve; clip.oversample='none';
   outGain=ctx.createGain(); outGain.gain.value=volAmt;
 
-  revSend=ctx.createGain(); revSend.gain.value=1;
-  const pre=ctx.createDelay(.5); pre.delayTime.value=.022;
-  convolver=ctx.createConvolver(); convolver.buffer=makeIR(2.2,2.4);
-  const wetLP=ctx.createBiquadFilter(); wetLP.type='lowpass'; wetLP.frequency.value=3800;
-  wetGain=ctx.createGain(); wetGain.gain.value=revAmt;
-
-  revSend.connect(pre); pre.connect(convolver); convolver.connect(wetLP);
-  wetLP.connect(wetGain); wetGain.connect(mixBus);
   mixBus.connect(clip); clip.connect(outGain); outGain.connect(ctx.destination);
 }
 function setVolume(pct,save){
@@ -464,22 +439,20 @@ function setVolume(pct,save){
   if(save!==false){try{localStorage.setItem('accordVol',String(Math.round(volAmt*100)))}catch(e){}}
   syncMix();
 }
-function setReverb(pct,save){
-  revAmt=Math.max(0,Math.min(1,pct/100));
-  if(wetGain) wetGain.gain.setTargetAtTime(revAmt,ctx.currentTime,.05);
-  if(save!==false){try{localStorage.setItem('accordRev',String(Math.round(revAmt*100)))}catch(e){}}
-  syncMix();
-}
 function syncMix(){
-  const v=Math.round(volAmt*100), r=Math.round(revAmt*100);
+  const v=Math.round(volAmt*100);
   ['volRange','sVol'].forEach(id=>{const e=$(id);if(e&&+e.value!==v)e.value=v});
-  ['revRange','sRev'].forEach(id=>{const e=$(id);if(e&&+e.value!==r)e.value=r});
   const a=$('volOut'); if(a) a.textContent=v+'%';
-  const c=$('revOut'); if(c) c.textContent=r+'%';
 }
 
-let lowLat=true;
-try{lowLat=localStorage.getItem('accordLowLat')!=='0'}catch(e){}
+/* A tiny buffer is fine on a desktop and starves on a phone, where the audio
+   thread has ~2.9 ms to render a chord, a 2 s convolution and the drums.
+   Touch devices therefore default to the safe buffer; a stored choice wins. */
+const touchDevice = (window.matchMedia
+  ? (matchMedia('(pointer:coarse)').matches || matchMedia('(hover:none)').matches)
+  : false) && (navigator.maxTouchPoints||0)>0;
+let lowLat=!touchDevice;
+try{const v=localStorage.getItem('accordLowLat'); if(v!==null) lowLat=(v!=='0')}catch(e){}
 function newCtx(){
   /* a numeric hint asks for the smallest buffer the device will give;
      'interactive' is noticeably more conservative */
@@ -503,7 +476,7 @@ async function setLowLatency(on){
   const wasBeat=!!drumTimer;
   panic();
   if(ctx){try{await ctx.close()}catch(e){}}
-  ctx=null;mixBus=null;outGain=null;revSend=null;wetGain=null;convolver=null;drumGain=null;noiseBuf=null;
+  ctx=null;mixBus=null;outGain=null;drumGain=null;noiseBuf=null;
   await ensureAudio();
   if(wasBeat) startBeat();
   syncSheet();updateLatencyReadout();
@@ -599,13 +572,8 @@ function voicedIntervals(raw){
   }
   return raw;
 }
-function makeVoice(f,gain=.08){
+function patchParams(){
   const sound=$('soundSelect').value;
-  const now=ctx.currentTime;
-  const master=ctx.createGain();
-  const filter=ctx.createBiquadFilter();
-  const os=[];
-
   let attack=.006, release=.3, filterFreq=3200;
   if(sound==='softPiano'){attack=.014;release=.55;filterFreq=2100}
   if(sound==='rhodes'){attack=.010;release=.8;filterFreq=2400}
@@ -614,17 +582,28 @@ function makeVoice(f,gain=.08){
   if(sound==='pad'){attack=.40;release=1.2;filterFreq=1800}
   if(sound==='vibes'){attack=.006;release=1.4;filterFreq=5000}
   if(sound==='strings'){attack=.32;release=1.4;filterFreq=2800}
+  return {sound,attack,release,filterFreq};
+}
+function makeChordFilter(pp){
+  /* one lowpass shared by every note of the chord - five notes used to mean
+     five identical filters running per render quantum */
+  const filter=ctx.createBiquadFilter();
+  filter.type='lowpass';
+  filter.frequency.value=pp.filterFreq;
+  filter.Q.value=.7;
+  filter.connect(mixBus);
+  return filter;
+}
+function makeVoice(f,gain,dest,pp){
+  const sound=pp.sound, attack=pp.attack, release=pp.release;
+  const now=ctx.currentTime;
+  const master=ctx.createGain();
+  const os=[];
 
   master.gain.setValueAtTime(0,now);
   master.gain.linearRampToValueAtTime(gain,now+attack);
   master.gain.exponentialRampToValueAtTime(gain*.42,now+attack+Math.max(.18,release*.35));
-
-  filter.type='lowpass';
-  filter.frequency.value=filterFreq;
-  filter.Q.value=.7;
-  master.connect(filter);
-  filter.connect(mixBus);
-  filter.connect(revSend);
+  master.connect(dest);
 
   function addOsc(type,mult,level,detune=0){
     const o=ctx.createOscillator(),g=ctx.createGain();
@@ -632,7 +611,7 @@ function makeVoice(f,gain=.08){
     o.frequency.value=f*mult;
     o.detune.value=detune;
     g.gain.value=level;
-    o.connect(g);g.connect(master);o.start();
+    o.connect(g);g.connect(master);o.start(now);   /* same clock as the envelope */
     os.push(o);
   }
 
@@ -655,7 +634,7 @@ function makeVoice(f,gain=.08){
     carrier.frequency.value=f;mod.frequency.value=f*2;
     mg.gain.value=f*.8;
     mod.connect(mg);mg.connect(carrier.frequency);
-    carrier.connect(master);carrier.start();mod.start();
+    carrier.connect(master);carrier.start(now);mod.start(now);
     os.push(carrier,mod);
   }else if(sound==='organ'){
     addOsc('sine',1,.65);
@@ -702,7 +681,11 @@ function fireChord(id,deg,type,flavor,octShift){
   stop(id);
   const voiced=voicedIntervals(intervals(deg,type,flavor));
   const base=rootMidi(deg,octShift);
-  active.set(id,voiced.map(i=>makeVoice(freq(base+i))));
+  const pp=patchParams();
+  const chordFilter=makeChordFilter(pp);
+  const vs=voiced.map(i=>makeVoice(freq(base+i),.08,chordFilter,pp));
+  vs.filter=chordFilter;
+  active.set(id,vs);
   setActiveVisual(id,true);
   const s=+$('sustainSelect').value;
   if(s>0) setTimeout(()=>stop(id),s*1000);
@@ -714,7 +697,7 @@ function start(key){
 }
 /* chords keep ringing after release, so decaying voices are tracked and capped */
 const tails=[];
-const MAX_TAILS=12;
+const MAX_TAILS=(window.matchMedia&&matchMedia('(pointer:coarse)').matches)?6:12;
 function pruneTails(hard){
   const now=ctx?ctx.currentTime:0;
   for(let i=tails.length-1;i>=0;i--) if(tails[i].end<=now) tails.splice(i,1);
@@ -757,6 +740,10 @@ function stop(id){
     v.master.gain.exponentialRampToValueAtTime(.0001,now+rel);
     v.os.forEach(o=>{try{o.stop(now+rel+.05)}catch(e){}});
   });
+  if(vs.filter){
+    const f=vs.filter;
+    setTimeout(()=>{try{f.disconnect()}catch(e){}},(longest+.35)*1000);
+  }
   tails.push({vs,end:now+longest+.05});
   pruneTails();
   active.delete(id);
@@ -984,27 +971,37 @@ function applyTheme(theme){
 }
 themeBtn.addEventListener('click',()=>applyTheme(document.body.classList.contains('dark-mode')?'light':'dark'));
 
-async function toggleFullscreen(){
+/* Safari still ships the Fullscreen API webkit-prefixed, on iPhone as well as
+   the desktop, so every entry point has to check both spellings. */
+const docEl=document.documentElement;
+const FS_REQUEST=docEl.requestFullscreen||docEl.webkitRequestFullscreen||docEl.webkitRequestFullScreen||null;
+const FS_EXIT=document.exitFullscreen||document.webkitExitFullscreen||document.webkitCancelFullScreen||null;
+const FS_OK=!!FS_REQUEST;
+function fsElement(){return document.fullscreenElement||document.webkitFullscreenElement||null}
+function toggleFullscreen(){
   try{
-    if(!document.fullscreenElement){await document.documentElement.requestFullscreen()}
-    else{await document.exitFullscreen()}
-  }catch(e){}
+    const r = fsElement() ? FS_EXIT.call(document) : FS_REQUEST.call(docEl);
+    if(r&&r.catch) r.catch(()=>toast('This browser refused full screen — try Add to Home Screen'));
+  }catch(e){
+    toast('This browser refused full screen — try Add to Home Screen');
+  }
+  /* older WebKit fires no promise and sometimes no event, so re-read shortly after */
+  setTimeout(paintFullscreen,180);
 }
-const FS_OK=!!(document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen);
 function fullscreenAction(){
   if(FS_OK) return toggleFullscreen();
-  /* iOS Safari has no Fullscreen API - Add to Home Screen is the way there */
-  toast('iOS: Share → Add to Home Screen for full screen');
+  toast('Full screen unavailable here — Share → Add to Home Screen');
+}
+function paintFullscreen(){
+  const on=!!fsElement();
+  document.body.classList.toggle('fullscreen',on&&!document.body.classList.contains('mode-pads'));
+  setBtn('fullscreenBtn',on?'shrink':'expand',on?'Exit Full Screen':'Full Screen');
+  setBtn('mFull',on?'shrink':'expand',on?'Exit':'Full');
 }
 $('fullscreenBtn').onclick=fullscreenAction;
 $('mFull').onclick=fullscreenAction;
 if(!FS_OK){$('mFull').title='Add to Home Screen for full screen';$('fullscreenBtn').title=$('mFull').title}
-document.addEventListener('fullscreenchange',()=>{
-  const on=!!document.fullscreenElement;
-  document.body.classList.toggle('fullscreen',on&&!document.body.classList.contains('mode-pads'));
-  setBtn('fullscreenBtn',on?'shrink':'expand',on?'Exit Full Screen':'Full Screen');
-  setBtn('mFull',on?'shrink':'expand',on?'Exit':'Full');
-});
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,paintFullscreen));
 
 /* suppress mobile browser gestures that fight an instrument UI */
 document.addEventListener('contextmenu',e=>{if(document.body.classList.contains('mode-pads'))e.preventDefault()});
@@ -1092,8 +1089,6 @@ function initDrumNodes(){
   drumGain=ctx.createGain();
   drumGain.gain.value=.34;
   drumGain.connect(mixBus);
-  const dSend=ctx.createGain(); dSend.gain.value=.28;
-  drumGain.connect(dSend); dSend.connect(revSend);
   const n=Math.floor(ctx.sampleRate*2);
   noiseBuf=ctx.createBuffer(1,n,ctx.sampleRate);
   const d=noiseBuf.getChannelData(0);
@@ -1259,13 +1254,10 @@ function buildSheet(){
   SHEET_GROUPS.forEach(g=>body.appendChild(group(g.label,chipRow(g.sel,g.cyan))));
 
   const mix=document.createElement('div');
-  mix.innerHTML='<div class="mixrow"><span style="font-size:.8rem;font-weight:600;min-width:56px">Volume</span>'
+  mix.innerHTML='<div class="mixrow">'
     + '<input type="range" id="sVol" min="0" max="100" step="1" aria-label="Master volume">'
-    + '<span class="out" id="volOut">85%</span></div>'
-    + '<div class="mixrow" style="margin-top:8px"><span style="font-size:.8rem;font-weight:600;min-width:56px">Reverb</span>'
-    + '<input type="range" id="sRev" min="0" max="100" step="1" aria-label="Reverb amount">'
-    + '<span class="out" id="revOut">35%</span></div>';
-  body.appendChild(group('Mix',mix));
+    + '<span class="out" id="volOut">85%</span></div>';
+  body.appendChild(group('Volume',mix));
 
   const lat=document.createElement('div');
   lat.appendChild(pickRow('latChips',[
@@ -1273,7 +1265,7 @@ function buildSheet(){
     {val:'off',label:'Safe buffer', on:()=>setLowLatency(false)}
   ]));
   const rd=document.createElement('p');rd.className='note';
-  rd.innerHTML='Output delay: <b id="latOut">play a chord to measure</b>. Switch to Safe buffer if you hear crackling.';
+  rd.innerHTML='Output delay: <b id="latOut">play a chord to measure</b>.<br>Phones default to Safe buffer. Try Low latency for a tighter response — switch back if you hear crackling.';
   lat.appendChild(rd);
   body.appendChild(group('Audio',lat));
 
@@ -1298,7 +1290,6 @@ function buildSheet(){
 
   $('sheetDone').onclick=closeSheet;
   $('sVol').oninput=e=>setVolume(+e.target.value);
-  $('sRev').oninput=e=>setReverb(+e.target.value);
   $('bpmDown').onclick=()=>nudgeTempo(-1);
   $('bpmUp').onclick=()=>nudgeTempo(1);
 }
@@ -1391,7 +1382,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('sheet').hidden)
 ['keySelect','octaveSelect','soundSelect','flavorSelect','presetSelect','voicingSelect','sustainSelect','beatSelect','tempoSelect']
   .forEach(id=>$(id).addEventListener('change',()=>{syncTransport();syncSheet()}));
 $('volRange').oninput=e=>setVolume(+e.target.value);
-$('revRange').oninput=e=>setReverb(+e.target.value);
 setBtn('mGear','sliders','Settings');
 setBtn('mStop','silence','Stop');
 
